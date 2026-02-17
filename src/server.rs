@@ -182,7 +182,7 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
                                     tracer.span_ok();
                                 }
                                 Err(err) => {
-                                    tracer.span_error(&errors::failed(format!("{:?}", err)));
+                                    tracer.span_error(&errors::failed(format!("{err:?}")));
                                 }
                             };
 
@@ -319,7 +319,7 @@ mod tests {
             .register_method(PHO, |_, _, _| Ok::<String, ErrorObjectOwned>(BAR.to_string()))
             .unwrap();
         module
-            .register_async_method(TIMEOUT, |_, _, _| async {
+            .register_async_method::<(), _, _>(TIMEOUT, |_, _, _| async {
                 loop {
                     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 }
