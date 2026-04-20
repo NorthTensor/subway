@@ -63,6 +63,8 @@ pub struct ServerConfig {
     pub max_subscriptions_per_connection: u32,
     pub max_batch_size: Option<u32>,
     #[serde(default)]
+    pub max_response_body_size: Option<u32>,
+    #[serde(default)]
     pub http_methods: Vec<HttpMethodsConfig>,
     #[serde(default = "default_request_timeout_seconds")]
     pub request_timeout_seconds: u64,
@@ -174,13 +176,18 @@ impl SubwayServerBuilder {
             methods: rpc_module.into(),
             stop_handle: stop_handle.clone(),
             rpc_metrics,
-            svc_builder: jsonrpsee::server::Server::builder()
-                .set_http_middleware(http_middleware)
-                .set_batch_request_config(batch_request_config)
-                .max_connections(config.max_connections)
-                .max_subscriptions_per_connection(config.max_subscriptions_per_connection)
-                .set_id_provider(RandomStringIdProvider::new(16))
-                .to_service_builder(),
+            svc_builder: {
+                let max_resp = config.max_response_body_size.unwrap_or(10 * 1024 * 1024);
+                tracing::info!("max_response_body_size = {}", max_resp);
+                jsonrpsee::server::Server::builder()
+                    .max_response_body_size(max_resp)
+                    .set_http_middleware(http_middleware)
+                    .set_batch_request_config(batch_request_config)
+                    .max_connections(config.max_connections)
+                    .max_subscriptions_per_connection(config.max_subscriptions_per_connection)
+                    .set_id_provider(RandomStringIdProvider::new(16))
+                    .to_service_builder()
+            },
             rate_limit_builder,
             rpc_method_weights,
         };
