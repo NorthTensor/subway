@@ -42,11 +42,15 @@ pub struct Client {
     rotation_notify: Arc<Notify>,
     retries: u32,
     background_task: tokio::task::JoinHandle<()>,
+    failback_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Drop for Client {
     fn drop(&mut self) {
         self.background_task.abort();
+        if let Some(task) = &self.failback_task {
+            task.abort();
+        }
     }
 }
 
@@ -57,6 +61,22 @@ pub struct ClientConfig {
     pub endpoints: Vec<String>,
     #[serde(default = "bool_true")]
     pub shuffle_endpoints: bool,
+    /// Per-request timeout towards the upstream (default 30 s). A request that
+    /// times out is retried on the next endpoint while retries remain.
+    #[serde(default)]
+    pub request_timeout_seconds: Option<u64>,
+    /// Attempts per request, including the first (default 3). 1 = never retry,
+    /// so a slow call is never re-run on another endpoint.
+    #[serde(default)]
+    #[garde(inner(range(min = 1)))]
+    pub retries: Option<u32>,
+    /// When set, and the client is not on the first endpoint (after a
+    /// disconnect or a rotation), probe the first endpoint at this interval and
+    /// switch back to it once it accepts a connection. Without it the client
+    /// stays wherever the last rotation left it.
+    #[serde(default)]
+    #[garde(inner(range(min = 1)))]
+    pub failback_interval_seconds: Option<u64>,
 }
 
 fn validate_endpoint(endpoint: &str, _context: &()) -> garde::Result {
@@ -68,6 +88,15 @@ fn validate_endpoint(endpoint: &str, _context: &()) -> garde::Result {
 }
 
 impl ClientConfig {
+    fn options(&self) -> ClientOptions {
+        ClientOptions {
+            request_timeout: self.request_timeout_seconds.map(Duration::from_secs),
+            connection_timeout: None,
+            retries: self.retries,
+            failback_interval: self.failback_interval_seconds.map(Duration::from_secs),
+        }
+    }
+
     pub async fn all_endpoints_can_be_connected(&self) -> bool {
         let join_handles: Vec<_> = self
             .endpoints
@@ -127,6 +156,16 @@ enum Message {
         retries: u32,
     },
     RotateEndpoint,
+    /// Reconnect to the first endpoint (sent by the failback probe).
+    Failback,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ClientOptions {
+    pub request_timeout: Option<Duration>,
+    pub connection_timeout: Option<Duration>,
+    pub retries: Option<u32>,
+    pub failback_interval: Option<Duration>,
 }
 
 #[async_trait]
@@ -137,9 +176,9 @@ impl Extension for Client {
         if config.shuffle_endpoints {
             let mut endpoints = config.endpoints.clone();
             endpoints.shuffle(&mut thread_rng());
-            Ok(Self::new(endpoints, None, None, None)?)
+            Ok(Self::with_options(endpoints, config.options())?)
         } else {
-            Ok(Self::new(config.endpoints.clone(), None, None, None)?)
+            Ok(Self::with_options(config.endpoints.clone(), config.options())?)
         }
     }
 }
@@ -151,6 +190,27 @@ impl Client {
         connection_timeout: Option<Duration>,
         retries: Option<u32>,
     ) -> Result<Self, anyhow::Error> {
+        Self::with_options(
+            endpoints,
+            ClientOptions {
+                request_timeout,
+                connection_timeout,
+                retries,
+                failback_interval: None,
+            },
+        )
+    }
+
+    pub fn with_options(
+        endpoints: impl IntoIterator<Item = impl AsRef<str>>,
+        options: ClientOptions,
+    ) -> Result<Self, anyhow::Error> {
+        let ClientOptions {
+            request_timeout,
+            connection_timeout,
+            retries,
+            failback_interval,
+        } = options;
         let endpoints: Vec<_> = endpoints.into_iter().map(|e| e.as_ref().to_string()).collect();
 
         if endpoints.is_empty() {
@@ -167,6 +227,10 @@ impl Client {
         let rotation_notify_bg = rotation_notify.clone();
         let endpoints_ = endpoints.clone();
 
+        // Index (into endpoints) of the endpoint the client is connected to.
+        let connected = Arc::new(AtomicUsize::new(0));
+        let connected_bg = connected.clone();
+
         let background_task = tokio::spawn(async move {
             let connect_backoff_counter = Arc::new(AtomicU32::new(0));
             let request_backoff_counter = Arc::new(AtomicU32::new(0));
@@ -177,7 +241,9 @@ impl Client {
             let build_ws = || async {
                 let build = || {
                     let current_endpoint = current_endpoint.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let url = &endpoints[current_endpoint % endpoints.len()];
+                    let index = current_endpoint % endpoints.len();
+                    connected_bg.store(index, std::sync::atomic::Ordering::Relaxed);
+                    let url = &endpoints[index];
 
                     tracing::info!("Connecting to endpoint: {}", url);
 
@@ -376,7 +442,7 @@ impl Client {
                                 let _ = response.send(Err(Error::RequestTimeout));
                             }
                         }
-                        Message::RotateEndpoint => {
+                        Message::RotateEndpoint | Message::Failback => {
                             unreachable!()
                         }
                     }
@@ -398,6 +464,14 @@ impl Client {
                                 tracing::info!("Rotate endpoint");
                                 ws = build_ws().await;
                             }
+                            Some(Message::Failback) => {
+                                if connected_bg.load(std::sync::atomic::Ordering::Relaxed) != 0 {
+                                    rotation_notify_bg.notify_waiters();
+                                    tracing::info!("Failback to first endpoint");
+                                    current_endpoint.store(0, std::sync::atomic::Ordering::Relaxed);
+                                    ws = build_ws().await;
+                                }
+                            }
                             Some(message) => handle_message(message, ws.clone()),
                             None => {
                                 tracing::debug!("Client dropped");
@@ -413,12 +487,33 @@ impl Client {
             return Err(anyhow!("Retries need to be at least 1"));
         }
 
+        let failback_task = failback_interval.filter(|_| endpoints_.len() > 1).map(|interval| {
+            let first = endpoints_[0].clone();
+            let connected = connected.clone();
+            let tx = message_tx.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(interval).await;
+                    if connected.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+                        continue;
+                    }
+                    let probe = tokio::time::timeout(interval.min(Duration::from_secs(5)), check_endpoint_connection(&first));
+                    if let Ok(Ok(())) = probe.await {
+                        if tx.send(Message::Failback).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            })
+        });
+
         Ok(Self {
             endpoints: endpoints_,
             sender: message_tx,
             rotation_notify,
             retries: retries.unwrap_or(3),
             background_task,
+            failback_task,
         })
     }
 

@@ -254,8 +254,12 @@ mod tests {
                 client: Some(ClientConfig {
                     endpoints: vec![endpoint],
                     shuffle_endpoints: false,
+                    request_timeout_seconds: None,
+                    retries: None,
+                    failback_interval_seconds: None,
                 }),
                 server: Some(ServerConfig {
+                    max_response_body_size: None,
                     listen_address: "127.0.0.1".to_string(),
                     port,
                     max_connections: 1024,

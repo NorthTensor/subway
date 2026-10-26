@@ -217,8 +217,12 @@ fn config() -> Config {
                     format!("ws://{}", SERVER_TWO_ENDPOINT),
                 ],
                 shuffle_endpoints: false,
+                request_timeout_seconds: None,
+                retries: None,
+                failback_interval_seconds: None,
             }),
             server: Some(ServerConfig {
+                max_response_body_size: None,
                 listen_address: SUBWAY_SERVER_ADDR.to_string(),
                 port: SUBWAY_SERVER_PORT,
                 max_connections: 1024 * 1024,
