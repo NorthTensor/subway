@@ -49,8 +49,12 @@ async fn merge_subscription_works() {
             client: Some(ClientConfig {
                 endpoints: vec![format!("ws://{addr}")],
                 shuffle_endpoints: false,
+                request_timeout_seconds: None,
+                retries: None,
+                failback_interval_seconds: None,
             }),
             server: Some(ServerConfig {
+                max_response_body_size: None,
                 listen_address: "0.0.0.0".to_string(),
                 port: 0,
                 max_connections: 10,

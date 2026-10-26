@@ -216,3 +216,124 @@ async fn retry_requests_out_of_retries() {
     handle1.stop().unwrap();
     handle2.stop().unwrap();
 }
+
+#[tokio::test]
+async fn retries_one_never_retries_on_timeout() {
+    let (addr1, handle1, mut rx1, _) = dummy_server().await;
+    let (addr2, handle2, mut rx2, _) = dummy_server().await;
+
+    let client = Client::with_options(
+        [format!("ws://{addr1}"), format!("ws://{addr2}")],
+        ClientOptions {
+            request_timeout: Some(Duration::from_millis(100)),
+            retries: Some(1),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let h1 = tokio::spawn(async move {
+        let _req = rx1.recv().await.unwrap();
+        // no response, let it timeout
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    });
+
+    let res = client.request("mock_rpc", vec![]).await;
+    assert_eq!(res.unwrap_err().data().unwrap().to_string(), "\"Request timeout\"");
+
+    // the call was not re-sent to the second endpoint
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(rx2.try_recv().is_err(), "a timed-out call was retried on another endpoint");
+
+    h1.await.unwrap();
+    handle1.stop().unwrap();
+    handle2.stop().unwrap();
+}
+
+#[tokio::test]
+async fn failback_returns_to_first_endpoint() {
+    let (addr1, handle1, rx1, _) = dummy_server().await;
+    let (addr2, handle2, rx2, _) = dummy_server().await;
+    let (addr3, handle3, rx3, _) = dummy_server().await;
+
+    let client = Client::with_options(
+        [format!("ws://{addr1}"), format!("ws://{addr2}"), format!("ws://{addr3}")],
+        ClientOptions {
+            failback_interval: Some(Duration::from_millis(300)),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let handle_requests = |mut rx: mpsc::Receiver<MockRequest>, n: u32| {
+        tokio::spawn(async move {
+            while let Some(req) = rx.recv().await {
+                req.respond(JsonValue::Number(n.into()));
+            }
+        })
+    };
+    let handler1 = handle_requests(rx1, 1);
+    let handler2 = handle_requests(rx2, 2);
+    let handler3 = handle_requests(rx3, 3);
+
+    assert_eq!(client.request("mock_rpc", vec![]).await.unwrap().to_string(), "1");
+
+    client.rotate_endpoint().await;
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert_eq!(client.request("mock_rpc", vec![]).await.unwrap().to_string(), "2");
+
+    // the first endpoint is healthy, so the first probe (300 ms after start)
+    // moves the client straight back to it, not on to the third as a plain
+    // round-robin reconnect would; the next probe is not due until 600 ms
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(client.request("mock_rpc", vec![]).await.unwrap().to_string(), "1");
+
+    drop(client);
+    handle1.stop().unwrap();
+    handle2.stop().unwrap();
+    handle3.stop().unwrap();
+    let _ = tokio::join!(handler1, handler2, handler3);
+}
+
+#[tokio::test]
+async fn no_failback_without_interval() {
+    let (addr1, handle1, rx1, _) = dummy_server().await;
+    let (addr2, handle2, rx2, _) = dummy_server().await;
+
+    let client = Client::with_endpoints([format!("ws://{addr1}"), format!("ws://{addr2}")]).unwrap();
+
+    let handle_requests = |mut rx: mpsc::Receiver<MockRequest>, n: u32| {
+        tokio::spawn(async move {
+            while let Some(req) = rx.recv().await {
+                req.respond(JsonValue::Number(n.into()));
+            }
+        })
+    };
+    let handler1 = handle_requests(rx1, 1);
+    let handler2 = handle_requests(rx2, 2);
+
+    client.rotate_endpoint().await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(client.request("mock_rpc", vec![]).await.unwrap().to_string(), "2");
+
+    drop(client);
+    handle1.stop().unwrap();
+    handle2.stop().unwrap();
+    let _ = tokio::join!(handler1, handler2);
+}
+
+#[test]
+fn config_parses_timeout_retries_failback() {
+    let config: ClientConfig = serde_yaml::from_str(
+        "endpoints: [ws://127.0.0.1:1]\nshuffle_endpoints: false\nrequest_timeout_seconds: 28\nretries: 1\nfailback_interval_seconds: 30\n",
+    )
+    .unwrap();
+    let options = config.options();
+    assert_eq!(options.request_timeout, Some(Duration::from_secs(28)));
+    assert_eq!(options.retries, Some(1));
+    assert_eq!(options.failback_interval, Some(Duration::from_secs(30)));
+
+    let defaults: ClientConfig = serde_yaml::from_str("endpoints: [ws://127.0.0.1:1]\n").unwrap();
+    let options = defaults.options();
+    assert_eq!((options.request_timeout, options.retries, options.failback_interval), (None, None, None));
+}
