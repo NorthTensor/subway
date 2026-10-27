@@ -243,21 +243,52 @@ async fn retries_one_never_retries_on_timeout() {
 
     // the call was not re-sent to the second endpoint
     tokio::time::sleep(Duration::from_millis(200)).await;
-    assert!(rx2.try_recv().is_err(), "a timed-out call was retried on another endpoint");
+    assert!(
+        rx2.try_recv().is_err(),
+        "a timed-out call was retried on another endpoint"
+    );
 
     h1.await.unwrap();
     handle1.stop().unwrap();
     handle2.stop().unwrap();
 }
 
+// a dummy server that also answers system_health with `health`
+async fn health_server(
+    health: JsonValue,
+) -> (
+    std::net::SocketAddr,
+    jsonrpsee::server::ServerHandle,
+    mpsc::Receiver<MockRequest>,
+) {
+    let mut builder = TestServerBuilder::new();
+    let rx = builder.register_method("mock_rpc");
+    let mut health_rx = builder.register_method("system_health");
+    let (addr, handle) = builder.build().await;
+    tokio::spawn(async move {
+        while let Some(req) = health_rx.recv().await {
+            req.respond(health.clone());
+        }
+    });
+    (addr, handle, rx)
+}
+
+fn healthy() -> JsonValue {
+    json!({"peers": 40, "isSyncing": false, "shouldHavePeers": true})
+}
+
 #[tokio::test]
 async fn failback_returns_to_first_endpoint() {
-    let (addr1, handle1, rx1, _) = dummy_server().await;
-    let (addr2, handle2, rx2, _) = dummy_server().await;
-    let (addr3, handle3, rx3, _) = dummy_server().await;
+    let (addr1, handle1, rx1) = health_server(healthy()).await;
+    let (addr2, handle2, rx2) = health_server(healthy()).await;
+    let (addr3, handle3, rx3) = health_server(healthy()).await;
 
     let client = Client::with_options(
-        [format!("ws://{addr1}"), format!("ws://{addr2}"), format!("ws://{addr3}")],
+        [
+            format!("ws://{addr1}"),
+            format!("ws://{addr2}"),
+            format!("ws://{addr3}"),
+        ],
         ClientOptions {
             failback_interval: Some(Duration::from_millis(300)),
             ..Default::default()
@@ -287,6 +318,106 @@ async fn failback_returns_to_first_endpoint() {
     // round-robin reconnect would; the next probe is not due until 600 ms
     tokio::time::sleep(Duration::from_millis(400)).await;
     assert_eq!(client.request("mock_rpc", vec![]).await.unwrap().to_string(), "1");
+
+    drop(client);
+    handle1.stop().unwrap();
+    handle2.stop().unwrap();
+    handle3.stop().unwrap();
+    let _ = tokio::join!(handler1, handler2, handler3);
+}
+
+// the first endpoint accepts connections but is not serving: the client stays
+// where it is, where a plain connection check would have failed back
+async fn assert_no_failback_to(first_health: JsonValue) {
+    let (addr1, handle1, rx1) = health_server(first_health).await;
+    let (addr2, handle2, rx2) = health_server(healthy()).await;
+    let (addr3, handle3, rx3) = health_server(healthy()).await;
+
+    let client = Client::with_options(
+        [
+            format!("ws://{addr1}"),
+            format!("ws://{addr2}"),
+            format!("ws://{addr3}"),
+        ],
+        ClientOptions {
+            failback_interval: Some(Duration::from_millis(300)),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let handle_requests = |mut rx: mpsc::Receiver<MockRequest>, n: u32| {
+        tokio::spawn(async move {
+            while let Some(req) = rx.recv().await {
+                req.respond(JsonValue::Number(n.into()));
+            }
+        })
+    };
+    let handler1 = handle_requests(rx1, 1);
+    let handler2 = handle_requests(rx2, 2);
+    let handler3 = handle_requests(rx3, 3);
+
+    assert_eq!(client.request("mock_rpc", vec![]).await.unwrap().to_string(), "1");
+
+    client.rotate_endpoint().await;
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert_eq!(client.request("mock_rpc", vec![]).await.unwrap().to_string(), "2");
+
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert_eq!(client.request("mock_rpc", vec![]).await.unwrap().to_string(), "2");
+
+    drop(client);
+    handle1.stop().unwrap();
+    handle2.stop().unwrap();
+    handle3.stop().unwrap();
+    let _ = tokio::join!(handler1, handler2, handler3);
+}
+
+#[tokio::test]
+async fn no_failback_to_syncing_endpoint() {
+    assert_no_failback_to(json!({"peers": 40, "isSyncing": true, "shouldHavePeers": true})).await;
+}
+
+#[tokio::test]
+async fn no_failback_to_endpoint_without_peers() {
+    assert_no_failback_to(json!({"peers": 0, "isSyncing": false, "shouldHavePeers": true})).await;
+}
+
+#[tokio::test]
+async fn no_failback_without_system_health() {
+    let (addr1, handle1, rx1, _) = dummy_server().await;
+    let (addr2, handle2, rx2) = health_server(healthy()).await;
+    let (addr3, handle3, rx3) = health_server(healthy()).await;
+
+    let client = Client::with_options(
+        [
+            format!("ws://{addr1}"),
+            format!("ws://{addr2}"),
+            format!("ws://{addr3}"),
+        ],
+        ClientOptions {
+            failback_interval: Some(Duration::from_millis(300)),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let handle_requests = |mut rx: mpsc::Receiver<MockRequest>, n: u32| {
+        tokio::spawn(async move {
+            while let Some(req) = rx.recv().await {
+                req.respond(JsonValue::Number(n.into()));
+            }
+        })
+    };
+    let handler1 = handle_requests(rx1, 1);
+    let handler2 = handle_requests(rx2, 2);
+    let handler3 = handle_requests(rx3, 3);
+
+    client.rotate_endpoint().await;
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert_eq!(client.request("mock_rpc", vec![]).await.unwrap().to_string(), "2");
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert_eq!(client.request("mock_rpc", vec![]).await.unwrap().to_string(), "2");
 
     drop(client);
     handle1.stop().unwrap();
@@ -335,5 +466,8 @@ fn config_parses_timeout_retries_failback() {
 
     let defaults: ClientConfig = serde_yaml::from_str("endpoints: [ws://127.0.0.1:1]\n").unwrap();
     let options = defaults.options();
-    assert_eq!((options.request_timeout, options.retries, options.failback_interval), (None, None, None));
+    assert_eq!(
+        (options.request_timeout, options.retries, options.failback_interval),
+        (None, None, None)
+    );
 }
