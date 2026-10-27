@@ -43,12 +43,16 @@ pub struct Client {
     retries: u32,
     background_task: tokio::task::JoinHandle<()>,
     failback_task: Option<tokio::task::JoinHandle<()>>,
+    unready_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Drop for Client {
     fn drop(&mut self) {
         self.background_task.abort();
         if let Some(task) = &self.failback_task {
+            task.abort();
+        }
+        if let Some(task) = &self.unready_task {
             task.abort();
         }
     }
@@ -77,6 +81,13 @@ pub struct ClientConfig {
     #[serde(default)]
     #[garde(inner(range(min = 1)))]
     pub failback_interval_seconds: Option<u64>,
+    /// When set, probe the connected endpoint's system_health and, once it has
+    /// not been ready (syncing, no peers, or no answer) for this long, rotate to
+    /// the next endpoint if that one is ready. Catches a node that still
+    /// delivers blocks, too slowly for the no-new-blocks rotation to fire.
+    #[serde(default)]
+    #[garde(inner(range(min = 1)))]
+    pub unready_rotate_seconds: Option<u64>,
 }
 
 fn validate_endpoint(endpoint: &str, _context: &()) -> garde::Result {
@@ -94,6 +105,7 @@ impl ClientConfig {
             connection_timeout: None,
             retries: self.retries,
             failback_interval: self.failback_interval_seconds.map(Duration::from_secs),
+            unready_rotate_after: self.unready_rotate_seconds.map(Duration::from_secs),
         }
     }
 
@@ -177,6 +189,9 @@ enum Message {
     RotateEndpoint,
     /// Reconnect to the first endpoint (sent by the failback probe).
     Failback,
+    /// Rotate if still connected to this endpoint index (sent by the unready
+    /// probe; a rotation or failback in between makes it stale).
+    RotateFrom(usize),
 }
 
 #[derive(Debug, Default, Clone)]
@@ -185,6 +200,7 @@ pub struct ClientOptions {
     pub connection_timeout: Option<Duration>,
     pub retries: Option<u32>,
     pub failback_interval: Option<Duration>,
+    pub unready_rotate_after: Option<Duration>,
 }
 
 #[async_trait]
@@ -216,6 +232,7 @@ impl Client {
                 connection_timeout,
                 retries,
                 failback_interval: None,
+                unready_rotate_after: None,
             },
         )
     }
@@ -229,6 +246,7 @@ impl Client {
             connection_timeout,
             retries,
             failback_interval,
+            unready_rotate_after,
         } = options;
         let endpoints: Vec<_> = endpoints.into_iter().map(|e| e.as_ref().to_string()).collect();
 
@@ -461,7 +479,7 @@ impl Client {
                                 let _ = response.send(Err(Error::RequestTimeout));
                             }
                         }
-                        Message::RotateEndpoint | Message::Failback => {
+                        Message::RotateEndpoint | Message::Failback | Message::RotateFrom(_) => {
                             unreachable!()
                         }
                     }
@@ -488,6 +506,13 @@ impl Client {
                                     rotation_notify_bg.notify_waiters();
                                     tracing::info!("Failback to first endpoint");
                                     current_endpoint.store(0, std::sync::atomic::Ordering::Relaxed);
+                                    ws = build_ws().await;
+                                }
+                            }
+                            Some(Message::RotateFrom(index)) => {
+                                if connected_bg.load(std::sync::atomic::Ordering::Relaxed) == index {
+                                    rotation_notify_bg.notify_waiters();
+                                    tracing::info!("Rotate endpoint");
                                     ws = build_ws().await;
                                 }
                             }
@@ -531,6 +556,54 @@ impl Client {
             })
         });
 
+        let unready_task = unready_rotate_after.filter(|_| endpoints_.len() > 1).map(|after| {
+            let endpoints = endpoints_.clone();
+            let connected = connected.clone();
+            let tx = message_tx.clone();
+            let every = (after / 3).min(Duration::from_secs(10));
+            let probe_timeout = every.min(Duration::from_secs(5));
+            tokio::spawn(async move {
+                // the endpoint seen not ready, and since when
+                let mut unready: Option<(usize, std::time::Instant)> = None;
+                loop {
+                    tokio::time::sleep(every).await;
+                    let index = connected.load(std::sync::atomic::Ordering::Relaxed);
+                    let current = &endpoints[index];
+                    match tokio::time::timeout(probe_timeout, check_endpoint_ready(current)).await {
+                        Ok(Ok(())) => {
+                            unready = None;
+                            continue;
+                        }
+                        Ok(Err(err)) => tracing::debug!("{current} not ready: {err}"),
+                        Err(_) => tracing::debug!("{current} not ready: probe timed out"),
+                    }
+                    let since = match unready {
+                        Some((i, since)) if i == index => since,
+                        _ => {
+                            unready = Some((index, std::time::Instant::now()));
+                            continue;
+                        }
+                    };
+                    if since.elapsed() < after {
+                        continue;
+                    }
+                    // only move to an endpoint that is serving, so a cluster
+                    // that is all catching up does not cycle through itself
+                    let next = &endpoints[(index + 1) % endpoints.len()];
+                    match tokio::time::timeout(probe_timeout, check_endpoint_ready(next)).await {
+                        Ok(Ok(())) => {
+                            tracing::warn!("{current} not ready for {after:?}, rotating to {next}");
+                            unready = None;
+                            if tx.send(Message::RotateFrom(index)).await.is_err() {
+                                break;
+                            }
+                        }
+                        _ => tracing::debug!("{current} not ready, but neither is {next}; staying"),
+                    }
+                }
+            })
+        });
+
         Ok(Self {
             endpoints: endpoints_,
             sender: message_tx,
@@ -538,6 +611,7 @@ impl Client {
             retries: retries.unwrap_or(3),
             background_task,
             failback_task,
+            unready_task,
         })
     }
 

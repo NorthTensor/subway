@@ -426,6 +426,76 @@ async fn no_failback_without_system_health() {
     let _ = tokio::join!(handler1, handler2, handler3);
 }
 
+// the client is on an endpoint that answers but is not serving; it moves on
+// once that has lasted `unready_rotate_after`, if the next endpoint is ready
+async fn endpoint_after_unready(first_health: JsonValue, second_health: JsonValue) -> String {
+    let (addr1, handle1, rx1) = health_server(first_health).await;
+    let (addr2, handle2, rx2) = health_server(second_health).await;
+    let (addr3, handle3, rx3) = health_server(healthy()).await;
+
+    let client = Client::with_options(
+        [
+            format!("ws://{addr1}"),
+            format!("ws://{addr2}"),
+            format!("ws://{addr3}"),
+        ],
+        ClientOptions {
+            unready_rotate_after: Some(Duration::from_millis(300)),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let handle_requests = |mut rx: mpsc::Receiver<MockRequest>, n: u32| {
+        tokio::spawn(async move {
+            while let Some(req) = rx.recv().await {
+                req.respond(JsonValue::Number(n.into()));
+            }
+        })
+    };
+    let handler1 = handle_requests(rx1, 1);
+    let handler2 = handle_requests(rx2, 2);
+    let handler3 = handle_requests(rx3, 3);
+
+    assert_eq!(client.request("mock_rpc", vec![]).await.unwrap().to_string(), "1");
+
+    // probes every 100 ms: first seen not ready at ~100 ms, rotation due at ~400 ms
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let endpoint = client.request("mock_rpc", vec![]).await.unwrap().to_string();
+
+    drop(client);
+    handle1.stop().unwrap();
+    handle2.stop().unwrap();
+    handle3.stop().unwrap();
+    let _ = tokio::join!(handler1, handler2, handler3);
+    endpoint
+}
+
+fn syncing() -> JsonValue {
+    json!({"peers": 40, "isSyncing": true, "shouldHavePeers": true})
+}
+
+#[tokio::test]
+async fn rotates_off_syncing_endpoint() {
+    assert_eq!(endpoint_after_unready(syncing(), healthy()).await, "2");
+}
+
+#[tokio::test]
+async fn rotates_off_endpoint_without_peers() {
+    let no_peers = json!({"peers": 0, "isSyncing": false, "shouldHavePeers": true});
+    assert_eq!(endpoint_after_unready(no_peers, healthy()).await, "2");
+}
+
+#[tokio::test]
+async fn stays_on_ready_endpoint() {
+    assert_eq!(endpoint_after_unready(healthy(), healthy()).await, "1");
+}
+
+#[tokio::test]
+async fn stays_when_next_endpoint_is_not_ready_either() {
+    assert_eq!(endpoint_after_unready(syncing(), syncing()).await, "1");
+}
+
 #[tokio::test]
 async fn no_failback_without_interval() {
     let (addr1, handle1, rx1, _) = dummy_server().await;
@@ -456,13 +526,14 @@ async fn no_failback_without_interval() {
 #[test]
 fn config_parses_timeout_retries_failback() {
     let config: ClientConfig = serde_yaml::from_str(
-        "endpoints: [ws://127.0.0.1:1]\nshuffle_endpoints: false\nrequest_timeout_seconds: 28\nretries: 1\nfailback_interval_seconds: 30\n",
+        "endpoints: [ws://127.0.0.1:1]\nshuffle_endpoints: false\nrequest_timeout_seconds: 28\nretries: 1\nfailback_interval_seconds: 30\nunready_rotate_seconds: 60\n",
     )
     .unwrap();
     let options = config.options();
     assert_eq!(options.request_timeout, Some(Duration::from_secs(28)));
     assert_eq!(options.retries, Some(1));
     assert_eq!(options.failback_interval, Some(Duration::from_secs(30)));
+    assert_eq!(options.unready_rotate_after, Some(Duration::from_secs(60)));
 
     let defaults: ClientConfig = serde_yaml::from_str("endpoints: [ws://127.0.0.1:1]\n").unwrap();
     let options = defaults.options();
@@ -470,4 +541,5 @@ fn config_parses_timeout_retries_failback() {
         (options.request_timeout, options.retries, options.failback_interval),
         (None, None, None)
     );
+    assert_eq!(options.unready_rotate_after, None);
 }

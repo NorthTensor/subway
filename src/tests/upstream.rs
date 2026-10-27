@@ -34,6 +34,7 @@ async fn upstream_error_propagate() {
                 request_timeout_seconds: None,
                 retries: None,
                 failback_interval_seconds: None,
+                unready_rotate_seconds: None,
             }),
             server: Some(ServerConfig {
                 max_response_body_size: None,
