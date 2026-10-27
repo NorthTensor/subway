@@ -136,6 +136,25 @@ async fn check_endpoint_connection(endpoint: &str) -> Result<(), anyhow::Error> 
     Ok(())
 }
 
+// failback check: the endpoint accepts a connection and system_health says it
+// is serving, i.e. not syncing and with peers (unless it should have none). A
+// node that has just restarted opens its RPC port before it has caught up.
+async fn check_endpoint_ready(endpoint: &str) -> Result<(), anyhow::Error> {
+    let client = WsClientBuilder::default().build(&endpoint).await?;
+    let health: JsonValue = client.request("system_health", Vec::<JsonValue>::new()).await?;
+    let syncing = health.get("isSyncing").and_then(JsonValue::as_bool);
+    let peers = health.get("peers").and_then(JsonValue::as_u64).unwrap_or(0);
+    let should_have_peers = health
+        .get("shouldHavePeers")
+        .and_then(JsonValue::as_bool)
+        .unwrap_or(true);
+    if syncing == Some(false) && (peers > 0 || !should_have_peers) {
+        Ok(())
+    } else {
+        Err(anyhow!("not ready: {health}"))
+    }
+}
+
 pub fn bool_true() -> bool {
     true
 }
@@ -497,11 +516,16 @@ impl Client {
                     if connected.load(std::sync::atomic::Ordering::Relaxed) == 0 {
                         continue;
                     }
-                    let probe = tokio::time::timeout(interval.min(Duration::from_secs(5)), check_endpoint_connection(&first));
-                    if let Ok(Ok(())) = probe.await {
-                        if tx.send(Message::Failback).await.is_err() {
-                            break;
+                    let probe =
+                        tokio::time::timeout(interval.min(Duration::from_secs(5)), check_endpoint_ready(&first));
+                    match probe.await {
+                        Ok(Ok(())) => {
+                            if tx.send(Message::Failback).await.is_err() {
+                                break;
+                            }
                         }
+                        Ok(Err(err)) => tracing::debug!("No failback to {first}: {err}"),
+                        Err(_) => tracing::debug!("No failback to {first}: probe timed out"),
                     }
                 }
             })
