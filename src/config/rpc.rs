@@ -19,6 +19,10 @@ pub struct MethodParam {
     pub optional: bool,
     #[serde(default)]
     pub inject: bool,
+    /// Other names a by-name (object) call may use for this param, such as the
+    /// node's own argument name where it differs from `name`.
+    #[serde(default)]
+    pub aliases: Vec<String>,
 }
 
 #[derive(Deserialize, Validate, Debug)]
@@ -95,6 +99,11 @@ pub struct RpcSubscription {
 
     #[serde(default)]
     pub merge_strategy: Option<MergeStrategy>,
+
+    /// The subscribe call's params. Only used to convert by-name (object)
+    /// params to positional ones; positional params are forwarded as given.
+    #[serde(default)]
+    pub params: Vec<MethodParam>,
 }
 
 #[derive(Deserialize, Validate, Debug)]
@@ -120,18 +129,21 @@ mod tests {
                 ty: "u64".to_string(),
                 optional: false,
                 inject: false,
+                aliases: vec![],
             },
             MethodParam {
                 name: "param2".to_string(),
                 ty: "u64".to_string(),
                 optional: true,
                 inject: false,
+                aliases: vec![],
             },
             MethodParam {
                 name: "param3".to_string(),
                 ty: "u64".to_string(),
                 optional: true,
                 inject: false,
+                aliases: vec![],
             },
         ];
         let method_name = "test";
@@ -147,18 +159,21 @@ mod tests {
                 ty: "u64".to_string(),
                 optional: false,
                 inject: true,
+                aliases: vec![],
             },
             MethodParam {
                 name: "param2".to_string(),
                 ty: "u64".to_string(),
                 optional: false,
                 inject: true,
+                aliases: vec![],
             },
             MethodParam {
                 name: "param3".to_string(),
                 ty: "u64".to_string(),
                 optional: false,
                 inject: true,
+                aliases: vec![],
             },
         ];
         let method_name = "test";
@@ -175,18 +190,21 @@ mod tests {
                 ty: "u64".to_string(),
                 optional: false,
                 inject: false,
+                aliases: vec![],
             },
             MethodParam {
                 name: "param2".to_string(),
                 ty: "u64".to_string(),
                 optional: true,
                 inject: false,
+                aliases: vec![],
             },
             MethodParam {
                 name: "param3".to_string(),
                 ty: "u64".to_string(),
                 optional: false,
                 inject: true,
+                aliases: vec![],
             },
         ];
         let test_fn = validate_params_with_name(method_name);

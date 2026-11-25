@@ -11,19 +11,35 @@ use opentelemetry::trace::FutureExt as _;
 use serde_json::json;
 
 use crate::{
-    config::Config,
+    config::{Config, MethodParam},
     extensions::{
         prometheus::get_rpc_metrics,
         rate_limit::{MethodWeights, RateLimitBuilder},
         server::SubwayServerBuilder,
     },
     middlewares::{factory, CallRequest, Middlewares, SubscriptionRequest},
-    utils::{errors, telemetry, TypeRegistryRef},
+    utils::{by_name, errors, telemetry, TypeRegistryRef},
 };
 
 // TODO: https://github.com/paritytech/jsonrpsee/issues/985
 fn string_to_static_str(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
+}
+
+/// Turns parsed request params into the positional list the middlewares work
+/// on: absent or null is empty, an array is taken as is, and an object
+/// (by-name params) is converted using the configured params.
+fn positional_params(
+    method: &str,
+    params: &[MethodParam],
+    parsed: JsonValue,
+) -> Result<Vec<JsonValue>, ErrorObjectOwned> {
+    match parsed {
+        JsonValue::Null => Ok(vec![]),
+        JsonValue::Array(list) => Ok(list),
+        JsonValue::Object(named) => by_name::named_to_positional(method, params, &named),
+        _ => Err(errors::invalid_params("params must be an array or an object")),
+    }
 }
 
 pub struct SubwayServerHandle {
@@ -81,15 +97,13 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
 
                 let method_name = string_to_static_str(method.method.clone());
 
+                let method_params = Arc::new(method.params.clone());
+
                 module.register_async_method(method_name, move |params, _, _| {
                     let method_middlewares = method_middlewares.clone();
+                    let method_params = method_params.clone();
                     async move {
-                        let parsed = params.parse::<JsonValue>()?;
-                        let params = if parsed == JsonValue::Null {
-                            vec![]
-                        } else {
-                            parsed.as_array().ok_or_else(|| errors::invalid_params(""))?.to_owned()
-                        };
+                        let params = positional_params(method_name, &method_params, params.parse::<JsonValue>()?)?;
 
                         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
                         let timeout = tokio::time::Duration::from_secs(request_timeout_seconds);
@@ -127,6 +141,7 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
                 let subscribe_name = string_to_static_str(subscription.subscribe.clone());
                 let unsubscribe_name = string_to_static_str(subscription.unsubscribe.clone());
                 let name = string_to_static_str(subscription.name.clone());
+                let subscribe_params = Arc::new(subscription.params.clone());
 
                 let mut subscription_middlewares: Vec<Arc<_>> = vec![];
 
@@ -149,13 +164,10 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
                     unsubscribe_name,
                     move |params, pending_sink, _, _| {
                         let subscription_middlewares = subscription_middlewares.clone();
+                        let subscribe_params = subscribe_params.clone();
                         async move {
-                            let parsed = params.parse::<JsonValue>()?;
-                            let params = if parsed == JsonValue::Null {
-                                vec![]
-                            } else {
-                                parsed.as_array().ok_or_else(|| errors::invalid_params(""))?.to_owned()
-                            };
+                            let params =
+                                positional_params(subscribe_name, &subscribe_params, params.parse::<JsonValue>()?)?;
 
                             let (result_tx, result_rx) = tokio::sync::oneshot::channel();
                             let timeout = tokio::time::Duration::from_secs(request_timeout_seconds);

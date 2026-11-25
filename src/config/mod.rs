@@ -12,6 +12,9 @@ pub use rpc::*;
 
 mod rpc;
 
+#[cfg(test)]
+mod node_names_test;
+
 const SUBSTRATE_CONFIG: &str = include_str!("../../rpc_configs/substrate.yml");
 const ETHEREUM_CONFIG: &str = include_str!("../../rpc_configs/ethereum.yml");
 

@@ -1,3 +1,4 @@
+pub mod by_name;
 mod cache;
 mod type_registry;
 
