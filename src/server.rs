@@ -166,8 +166,20 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
                         let subscription_middlewares = subscription_middlewares.clone();
                         let subscribe_params = subscribe_params.clone();
                         async move {
-                            let params =
-                                positional_params(subscribe_name, &subscribe_params, params.parse::<JsonValue>()?)?;
+                            // A `?` here would drop `pending_sink`, which jsonrpsee answers
+                            // with -32603 "Internal error". Reject it instead, so the caller
+                            // gets -32602 and the reason, as for a method.
+                            let params = match params
+                                .parse::<JsonValue>()
+                                .and_then(|parsed| positional_params(subscribe_name, &subscribe_params, parsed))
+                            {
+                                Ok(params) => params,
+                                Err(err) => {
+                                    tracer.span_ok();
+                                    pending_sink.reject(err).await;
+                                    return Ok(());
+                                }
+                            };
 
                             let (result_tx, result_rx) = tokio::sync::oneshot::channel();
                             let timeout = tokio::time::Duration::from_secs(request_timeout_seconds);
@@ -237,16 +249,20 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
 #[cfg(test)]
 mod tests {
     use jsonrpsee::{
-        core::{client::ClientT, params::BatchRequestBuilder},
+        core::{
+            client::{ClientT, SubscriptionClientT},
+            params::BatchRequestBuilder,
+            traits::ToRpcParams,
+        },
         rpc_params,
         server::{ServerBuilder, ServerHandle},
         ws_client::{WsClient, WsClientBuilder},
-        RpcModule,
+        RpcModule, SubscriptionMessage,
     };
 
     use super::*;
     use crate::{
-        config::{MiddlewaresConfig, RpcDefinitions, RpcMethod},
+        config::{MiddlewaresConfig, RpcDefinitions, RpcMethod, RpcSubscription},
         extensions::{client::ClientConfig, server::ServerConfig, ExtensionsConfig},
     };
 
@@ -254,12 +270,25 @@ mod tests {
     const CRAZY: &str = "go_crazy";
     const PHO: &str = "call_pho";
     const BAR: &str = "bar";
+    const SUB: &str = "subscribe_echo";
+    const UNSUB: &str = "unsubscribe_echo";
+    const SUB_NAME: &str = "echo";
 
     async fn subway_server(
         endpoint: String,
         port: u16,
         request_timeout_seconds: Option<u64>,
         max_batch_size: Option<u32>,
+    ) -> SubwayServerHandle {
+        subway_server_with_subscriptions(endpoint, port, request_timeout_seconds, max_batch_size, vec![]).await
+    }
+
+    async fn subway_server_with_subscriptions(
+        endpoint: String,
+        port: u16,
+        request_timeout_seconds: Option<u64>,
+        max_batch_size: Option<u32>,
+        subscriptions: Vec<RpcSubscription>,
     ) -> SubwayServerHandle {
         let config = Config {
             extensions: ExtensionsConfig {
@@ -286,7 +315,7 @@ mod tests {
             },
             middlewares: MiddlewaresConfig {
                 methods: vec!["crazy".to_string(), "upstream".to_string()],
-                subscriptions: vec![],
+                subscriptions: vec!["upstream".to_string()],
             },
             rpcs: RpcDefinitions {
                 methods: vec![
@@ -315,7 +344,7 @@ mod tests {
                         rate_limit_weight: 1,
                     },
                 ],
-                subscriptions: vec![],
+                subscriptions,
                 aliases: vec![],
             },
         };
@@ -342,9 +371,133 @@ mod tests {
                 }
             })
             .unwrap();
+        // answers one notification: the params it was subscribed with
+        module
+            .register_subscription(SUB, SUB_NAME, UNSUB, |params, pending, _, _| async move {
+                let params = params.parse::<JsonValue>()?;
+                let sink = pending.accept().await?;
+                sink.send(SubscriptionMessage::from_json(&params)?).await?;
+                futures::future::pending::<()>().await;
+                Ok(())
+            })
+            .unwrap();
         let addr = format!("ws://{}", server.local_addr().unwrap());
         let handle = server.start(module);
         (addr, handle)
+    }
+
+    fn subscription() -> RpcSubscription {
+        let param = |name: &str, optional: bool, aliases: &[&str]| MethodParam {
+            name: name.to_string(),
+            ty: String::new(),
+            optional,
+            inject: false,
+            aliases: aliases.iter().map(|a| a.to_string()).collect(),
+        };
+        RpcSubscription {
+            subscribe: SUB.to_string(),
+            unsubscribe: UNSUB.to_string(),
+            name: SUB_NAME.to_string(),
+            merge_strategy: None,
+            params: vec![param("withRuntime", true, &[]), param("keys", true, &["list"])],
+        }
+    }
+
+    /// Params sent exactly as written, for shapes `rpc_params!` cannot produce.
+    struct RawParams(&'static str);
+
+    impl ToRpcParams for RawParams {
+        fn to_rpc_params(self) -> Result<Option<Box<serde_json::value::RawValue>>, serde_json::Error> {
+            serde_json::value::RawValue::from_string(self.0.to_string()).map(Some)
+        }
+    }
+
+    async fn subscribe_error(client: &WsClient, params: &'static str) -> ErrorObjectOwned {
+        match client
+            .subscribe::<JsonValue, _>(SUB, RawParams(params), UNSUB)
+            .await
+            .map(|_| ())
+        {
+            Err(jsonrpsee::core::client::Error::Call(err)) => err,
+            other => panic!("{params}: expected a call error, got {other:?}"),
+        }
+    }
+
+    async fn subscribe_first(client: &WsClient, params: &'static str) -> JsonValue {
+        let mut sub = client
+            .subscribe::<JsonValue, _>(SUB, RawParams(params), UNSUB)
+            .await
+            .unwrap_or_else(|e| panic!("{params}: {e:?}"));
+        tokio::time::timeout(std::time::Duration::from_secs(5), sub.next())
+            .await
+            .unwrap_or_else(|_| panic!("{params}: no notification"))
+            .unwrap()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn subscribe_with_bad_params_is_invalid_params_not_internal_error() {
+        let (endpoint, upstream_dummy_server_handle) = upstream_dummy_server("127.0.0.1:9960").await;
+        let subway_server = subway_server_with_subscriptions(endpoint, 9949, None, None, vec![subscription()]).await;
+        let url = format!("ws://{}", subway_server.addr);
+        let client = ws_client(&url).await;
+
+        // unknown by-name key
+        let err = subscribe_error(&client, r#"{"x":1}"#).await;
+        assert_eq!(err.code(), -32602, "{err:?}");
+        let data = err.data().unwrap().get();
+        assert!(data.contains("unknown param \\\"x\\\""), "{data}");
+        assert!(data.contains("withRuntime"), "{data}");
+
+        // two keys for one param
+        let err = subscribe_error(&client, r#"{"with_runtime":false,"withRuntime":true}"#).await;
+        assert_eq!(err.code(), -32602, "{err:?}");
+        assert!(err.data().unwrap().get().contains("both name param"), "{err:?}");
+
+        // params that are neither an array nor an object
+        for params in ["1", "\"a\"", "true"] {
+            let err = subscribe_error(&client, params).await;
+            assert_eq!(err.code(), -32602, "{params}: {err:?}");
+            assert!(err.data().unwrap().get().contains("array or an object"), "{err:?}");
+        }
+
+        // the connection is still usable afterwards
+        assert_eq!(subscribe_first(&client, "[]").await, json!([]));
+
+        subway_server.handle.stop().unwrap();
+        upstream_dummy_server_handle.stop().unwrap();
+    }
+
+    #[tokio::test]
+    async fn valid_subscribes_reach_upstream_unchanged() {
+        let (endpoint, upstream_dummy_server_handle) = upstream_dummy_server("127.0.0.1:9961").await;
+        let subway_server = subway_server_with_subscriptions(endpoint, 9950, None, None, vec![subscription()]).await;
+        let url = format!("ws://{}", subway_server.addr);
+        let client = ws_client(&url).await;
+
+        // positional params are forwarded as given, whatever the configured params say
+        assert_eq!(subscribe_first(&client, "[]").await, json!([]));
+        assert_eq!(subscribe_first(&client, "[true]").await, json!([true]));
+        assert_eq!(
+            subscribe_first(&client, r#"[null,["0x01"],"extra"]"#).await,
+            json!([null, ["0x01"], "extra"])
+        );
+        // null params are an empty list, as before
+        assert_eq!(subscribe_first(&client, "null").await, json!([]));
+
+        // by-name params become positional ones
+        assert_eq!(subscribe_first(&client, "{}").await, json!([]));
+        assert_eq!(
+            subscribe_first(&client, r#"{"with_runtime":true}"#).await,
+            json!([true])
+        );
+        assert_eq!(
+            subscribe_first(&client, r#"{"list":["0x01"]}"#).await,
+            json!([null, ["0x01"]])
+        );
+
+        subway_server.handle.stop().unwrap();
+        upstream_dummy_server_handle.stop().unwrap();
     }
 
     async fn ws_client(url: &str) -> WsClient {
