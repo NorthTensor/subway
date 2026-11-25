@@ -1,3 +1,8 @@
+# Param names: used to convert JSON-RPC by-name (object) params to positions.
+# `aliases` lists the node's own argument names where they differ (Frontier
+# client/rpc-core, as vendored in subtensor mainnet). The snake_case and
+# camelCase forms of every name are accepted too. tests/node_param_names.json
+# pins the node's names; see config/node_names_test.rs.
 methods:
   - method: eth_blockNumber
     cache:
@@ -50,6 +55,7 @@ methods:
     params:
       - name: Transaction
         ty: Bytes
+        aliases: [ request ]
 
   - method: eth_sendRawTransaction
     cache:
@@ -57,6 +63,7 @@ methods:
     params:
       - name: transaction
         ty: Bytes
+        aliases: [ bytes ]
 
   - method: eth_call
     cache:
@@ -64,6 +71,14 @@ methods:
     params:
       - name: transaction
         ty: Bytes
+        aliases: [ request ]
+      - name: block
+        ty: BlockTag
+        optional: true
+        aliases: [ number_or_hash ]
+      - name: stateOverrides
+        ty: StateOverrides
+        optional: true
 
   - method: eth_getTransactionCount
     cache:
@@ -73,43 +88,52 @@ methods:
         ty: Bytes
       - name: block
         ty: BlockHash
+        aliases: [ number_or_hash ]
 
   - method: eth_getBlockByHash
     params:
       - name: BlockHash
         ty: BlockHash
+        aliases: [ hash ]
       - name: FullTransactions
         ty: Boolean
+        aliases: [ full ]
 
   - method: eth_getBlockByNumber
     params:
       - name: blockTag
         ty: BlockTag
         inject: true
+        aliases: [ number_or_hash ]
       - name: fullTransactions
         ty: Boolean
+        aliases: [ full ]
 
   - method: eth_getBlockTransactionCountByHash
     params:
       - name: BlockHash
         ty: BlockHash
+        aliases: [ hash ]
 
   - method: eth_getBlockTransactionCountByNumber
     params:
       - name: blockTag
         ty: BlockTag
         inject: true
+        aliases: [ number_or_hash ]
 
   - method: eth_getUncleCountByBlockHash
     params:
       - name: BlockHash
         ty: BlockHash
+        aliases: [ hash ]
 
   - method: eth_getUncleCountByBlockNumber
     params:
       - name: blockTag
         ty: BlockTag
         inject: true
+        aliases: [ number_or_hash ]
 
   - method: eth_estimateGas
     cache:
@@ -117,6 +141,11 @@ methods:
     params:
       - name: transaction
         ty: Bytes
+        aliases: [ request ]
+      - name: block
+        ty: BlockTag
+        optional: true
+        aliases: [ number_or_hash ]
 
   - method: eth_feeHistory
     params:
@@ -131,16 +160,20 @@ methods:
     params:
       - name: blockHash
         ty: BlockHash
+        aliases: [ hash ]
       - name: hexNumber
         ty: Bytes
+        aliases: [ index ]
 
   - method: eth_getUncleByBlockNumberAndIndex
     params:
       - name: block
         ty: BlockTag
         inject: true
+        aliases: [ number_or_hash ]
       - name: hexNumber
         ty: Bytes
+        aliases: [ index ]
 
   - method: eth_isBlockFinalized
     cache:
@@ -178,6 +211,7 @@ methods:
     params:
       - name: address
         ty: Bytes
+        aliases: [ index ]
 
   - method: eth_getFilterLogs
     cache:
@@ -185,6 +219,7 @@ methods:
     params:
       - name: address
         ty: Bytes
+        aliases: [ index ]
 
   - method: eth_uninstallFilter
     cache:
@@ -192,6 +227,7 @@ methods:
     params:
       - name: FilterIdentifier
         ty: Bytes
+        aliases: [ index ]
 
   - method: eth_getLogs
     cache:
@@ -207,6 +243,7 @@ methods:
       - name: Block
         ty: BlockTag
         inject: true
+        aliases: [ number_or_hash ]
 
   - method: eth_getStorageAt
     params:
@@ -214,9 +251,11 @@ methods:
         ty: Bytes
       - name: position
         ty: Bytes
+        aliases: [ index ]
       - name: block
         ty: BlockTag
         inject: true
+        aliases: [ number_or_hash ]
 
   - method: eth_getCode
     params:
@@ -225,26 +264,32 @@ methods:
       - name: Block
         ty: BlockTag
         inject: true
+        aliases: [ number_or_hash ]
 
   - method: eth_getTransactionByHash
     params:
       - name: transactionHash
         ty: Bytes
+        aliases: [ hash ]
 
   - method: eth_getTransactionByBlockHashAndIndex
     params:
       - name: BlockHash
         ty: BlockHash
+        aliases: [ hash ]
       - name: TransactionIndex
         ty: Bytes
+        aliases: [ index ]
 
   - method: eth_getTransactionByBlockNumberAndIndex
     params:
       - name: blockTag
         ty: BlockTag
         inject: true
+        aliases: [ number_or_hash ]
       - name: transactionIndex
         ty: HexNumber
+        aliases: [ index ]
 
   - method: eth_getEthGas
     params:
@@ -260,8 +305,15 @@ methods:
     params:
       - name: txHash
         ty: Bytes
+        aliases: [ hash ]
 
 subscriptions:
   - subscribe: eth_subscribe
     unsubscribe: eth_unsubscribe
     name: eth_subscription
+    params:
+      - name: kind
+        ty: String
+      - name: params
+        ty: Object
+        optional: true

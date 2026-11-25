@@ -196,12 +196,14 @@ mod tests {
                 ty: "StorageKey".to_string(),
                 optional: false,
                 inject: false,
+                aliases: vec![],
             },
             MethodParam {
                 name: "at".to_string(),
                 ty: "BlockTag".to_string(),
                 optional: false,
                 inject: true,
+                aliases: vec![],
             },
         ])
         .await;
@@ -240,12 +242,14 @@ mod tests {
                 ty: "StorageKey".to_string(),
                 optional: false,
                 inject: false,
+                aliases: vec![],
             },
             MethodParam {
                 name: "at".to_string(),
                 ty: "BlockTag".to_string(),
                 optional: false,
                 inject: true,
+                aliases: vec![],
             },
         ])
         .await;

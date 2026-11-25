@@ -1,3 +1,10 @@
+# Param names: the middlewares work on positional params; these names are
+# used to convert JSON-RPC by-name (object) params to positions. `aliases`
+# lists the node's own argument names where they differ (polkadot-sdk
+# RaoFoundation/polkadot-sdk@cacb4310, substrate/client/rpc-api and
+# substrate/utils/frame/rpc/system, as used by subtensor mainnet). The snake_case
+# and camelCase forms of every name are accepted too.
+# tests/node_param_names.json pins the node's names; see config/node_names_test.rs.
 methods:
   - method: author_submitExtrinsic
     cache:
@@ -17,6 +24,7 @@ methods:
         ty: BlockNumber
         optional: true
         inject: true
+        aliases: [ hash ]
 
   - method: chain_getHeader
     params:
@@ -44,6 +52,7 @@ methods:
         ty: BlockHash
         optional: true
         inject: true
+        aliases: [ hash ]
 
   - method: state_getMetadata
     params:
@@ -51,6 +60,7 @@ methods:
         ty: BlockHash
         optional: true
         inject: true
+        aliases: [ hash ]
 
   - method: state_getStorage
     params:
@@ -60,11 +70,13 @@ methods:
         ty: BlockHash
         optional: true
         inject: true
+        aliases: [ hash ]
 
   - method: state_getKeysPaged
     params:
       - name: key
         ty: StorageKey
+        aliases: [ prefix ]
       - name: count
         ty: u32
       - name: startKey
@@ -74,6 +86,7 @@ methods:
         ty: BlockHash
         optional: true
         inject: true
+        aliases: [ hash ]
 
   - method: state_queryStorageAt
     params:
@@ -91,12 +104,15 @@ methods:
     params:
       - name: method
         ty: String
+        aliases: [ name ]
       - name: data
         ty: Bytes
+        aliases: [ bytes ]
       - name: at
         ty: BlockHash
         optional: true
         inject: true
+        aliases: [ hash ]
 
   - method: state_getReadProof
     params:
@@ -106,6 +122,7 @@ methods:
         ty: BlockHash
         optional: true
         inject: true
+        aliases: [ hash ]
 
   - method: childstate_getKeysPaged
     params:
@@ -122,6 +139,7 @@ methods:
         ty: BlockHash
         optional: true
         inject: true
+        aliases: [ hash ]
 
   - method: childstate_getStorage
     params:
@@ -133,6 +151,7 @@ methods:
         ty: BlockHash
         optional: true
         inject: true
+        aliases: [ hash ]
 
   - method: system_chain
     cache:
@@ -186,11 +205,16 @@ methods:
     params:
       - name: accountId
         ty: AccountId
+        aliases: [ account ]
 
 subscriptions:
   - subscribe: author_submitAndWatchExtrinsic
     unsubscribe: author_unwatchExtrinsic
     name: author_extrinsicUpdate
+    params:
+      - name: extrinsic
+        ty: Bytes
+        aliases: [ bytes ]
 
   - subscribe: chain_subscribeNewHeads
     unsubscribe: chain_unsubscribeNewHeads
@@ -216,6 +240,10 @@ subscriptions:
     unsubscribe: state_unsubscribeStorage
     name: state_storage
     merge_strategy: merge_storage_changes
+    params:
+      - name: keys
+        ty: 'Vec<StorageKey>'
+        optional: true
 
 aliases:
   - [ chain_subscribeNewHeads, chain_subscribeNewHead ]

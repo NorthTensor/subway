@@ -1,0 +1,626 @@
+{
+  "_comment": "The node's JSON-RPC argument names per method, in order (a trailing ? marks an Option<..> argument the caller may leave out). Extracted by scripts/extract_node_param_names.py from the sources below; regenerate with that script when subtensor moves to a new polkadot-sdk or Frontier revision.",
+  "sources": {
+    "polkadot-sdk": "RaoFoundation/polkadot-sdk@cacb4310f20c7cac83eb3ccd8ed5a5ad4212608a",
+    "subtensor": "opentensor/subtensor mainnet branch @d967d13588834f4f5aaa8ef4c8fc1a865d581462 (2026-11-10, spec_version 490): pallets/subtensor/rpc, pallets/swap/rpc, vendor/frontier/client/rpc-core. Its polkadot-sdk is the rev above. The client on entrypoint-finney (system_version 4.0.0-dev-da06f033663) has the same argument names for every method both define."
+  },
+  "methods": {
+    "account_nextIndex": [
+      "account"
+    ],
+    "archive_v1_body": [
+      "hash"
+    ],
+    "archive_v1_call": [
+      "hash",
+      "function",
+      "call_parameters"
+    ],
+    "archive_v1_finalizedHeight": [],
+    "archive_v1_genesisHash": [],
+    "archive_v1_hashByHeight": [
+      "height"
+    ],
+    "archive_v1_header": [
+      "hash"
+    ],
+    "archive_v1_storage": [
+      "hash",
+      "items",
+      "child_trie?"
+    ],
+    "archive_v1_storageDiff": [
+      "hash",
+      "items",
+      "previous_hash?"
+    ],
+    "author_hasKey": [
+      "public_key",
+      "key_type"
+    ],
+    "author_hasSessionKeys": [
+      "session_keys"
+    ],
+    "author_insertKey": [
+      "key_type",
+      "suri",
+      "public"
+    ],
+    "author_pendingExtrinsics": [],
+    "author_removeExtrinsic": [
+      "bytes_or_hash"
+    ],
+    "author_rotateKeys": [],
+    "author_submitAndWatchExtrinsic": [
+      "bytes"
+    ],
+    "author_submitExtrinsic": [
+      "extrinsic"
+    ],
+    "betaBasket_getAllBaskets": [
+      "at?"
+    ],
+    "betaBasket_getStakerOwed": [
+      "coldkey",
+      "at?"
+    ],
+    "betaBasket_getStakerPositions": [
+      "coldkey",
+      "at?"
+    ],
+    "betaBasket_getStakerValidatorOwed": [
+      "hotkey",
+      "coldkey",
+      "at?"
+    ],
+    "betaBasket_getTotalNav": [
+      "at?"
+    ],
+    "betaBasket_getValidatorBasket": [
+      "hotkey",
+      "at?"
+    ],
+    "betaBasket_getValidatorNav": [
+      "hotkey",
+      "at?"
+    ],
+    "betaBasket_getValidatorSummary": [
+      "hotkey",
+      "at?"
+    ],
+    "chainHead_v1_body": [
+      "follow_subscription",
+      "hash"
+    ],
+    "chainHead_v1_call": [
+      "follow_subscription",
+      "hash",
+      "function",
+      "call_parameters"
+    ],
+    "chainHead_v1_continue": [
+      "follow_subscription",
+      "operation_id"
+    ],
+    "chainHead_v1_follow": [
+      "with_runtime"
+    ],
+    "chainHead_v1_header": [
+      "follow_subscription",
+      "hash"
+    ],
+    "chainHead_v1_stopOperation": [
+      "follow_subscription",
+      "operation_id"
+    ],
+    "chainHead_v1_storage": [
+      "follow_subscription",
+      "hash",
+      "items",
+      "child_trie?"
+    ],
+    "chainHead_v1_unpin": [
+      "follow_subscription",
+      "hash_or_hashes"
+    ],
+    "chainSpec_v1_chainName": [],
+    "chainSpec_v1_genesisHash": [],
+    "chainSpec_v1_properties": [],
+    "chain_getBlock": [
+      "hash?"
+    ],
+    "chain_getBlockHash": [
+      "hash?"
+    ],
+    "chain_getFinalisedHead": [],
+    "chain_getFinalizedHead": [],
+    "chain_getHead": [
+      "hash?"
+    ],
+    "chain_getHeader": [
+      "hash?"
+    ],
+    "chain_getRuntimeVersion": [
+      "hash?"
+    ],
+    "chain_subscribeAllHeads": [],
+    "chain_subscribeFinalisedHeads": [],
+    "chain_subscribeFinalizedHeads": [],
+    "chain_subscribeNewHead": [],
+    "chain_subscribeNewHeads": [],
+    "chain_subscribeRuntimeVersion": [],
+    "childstate_getKeys": [
+      "child_storage_key",
+      "prefix",
+      "hash?"
+    ],
+    "childstate_getKeysPaged": [
+      "child_storage_key",
+      "prefix?",
+      "count",
+      "start_key?",
+      "hash?"
+    ],
+    "childstate_getKeysPagedAt": [
+      "child_storage_key",
+      "prefix?",
+      "count",
+      "start_key?",
+      "hash?"
+    ],
+    "childstate_getStorage": [
+      "child_storage_key",
+      "key",
+      "hash?"
+    ],
+    "childstate_getStorageEntries": [
+      "child_storage_key",
+      "keys",
+      "hash?"
+    ],
+    "childstate_getStorageHash": [
+      "child_storage_key",
+      "key",
+      "hash?"
+    ],
+    "childstate_getStorageSize": [
+      "child_storage_key",
+      "key",
+      "hash?"
+    ],
+    "debug_getBadBlocks": [
+      "number"
+    ],
+    "debug_getRawBlock": [
+      "number"
+    ],
+    "debug_getRawHeader": [
+      "number"
+    ],
+    "debug_getRawReceipts": [
+      "number"
+    ],
+    "debug_getRawTransaction": [
+      "hash"
+    ],
+    "delegateInfo_getDelegate": [
+      "delegate_account_vec",
+      "at?"
+    ],
+    "delegateInfo_getDelegated": [
+      "delegatee_account_vec",
+      "at?"
+    ],
+    "delegateInfo_getDelegates": [
+      "at?"
+    ],
+    "eth_accounts": [],
+    "eth_blockNumber": [],
+    "eth_call": [
+      "request",
+      "number_or_hash?",
+      "state_overrides?"
+    ],
+    "eth_chainId": [],
+    "eth_coinbase": [],
+    "eth_estimateGas": [
+      "request",
+      "number_or_hash?"
+    ],
+    "eth_feeHistory": [
+      "block_count",
+      "newest_block",
+      "reward_percentiles?"
+    ],
+    "eth_gasPrice": [],
+    "eth_getBalance": [
+      "address",
+      "number_or_hash?"
+    ],
+    "eth_getBlockByHash": [
+      "hash",
+      "full"
+    ],
+    "eth_getBlockByNumber": [
+      "number_or_hash",
+      "full"
+    ],
+    "eth_getBlockReceipts": [
+      "number_or_hash"
+    ],
+    "eth_getBlockTransactionCountByHash": [
+      "hash"
+    ],
+    "eth_getBlockTransactionCountByNumber": [
+      "number_or_hash"
+    ],
+    "eth_getCode": [
+      "address",
+      "number_or_hash?"
+    ],
+    "eth_getFilterChanges": [
+      "index"
+    ],
+    "eth_getFilterLogs": [
+      "index"
+    ],
+    "eth_getLogs": [
+      "filter"
+    ],
+    "eth_getStorageAt": [
+      "address",
+      "index",
+      "number_or_hash?"
+    ],
+    "eth_getTransactionByBlockHashAndIndex": [
+      "hash",
+      "index"
+    ],
+    "eth_getTransactionByBlockNumberAndIndex": [
+      "number_or_hash",
+      "index"
+    ],
+    "eth_getTransactionByHash": [
+      "hash"
+    ],
+    "eth_getTransactionCount": [
+      "address",
+      "number_or_hash?"
+    ],
+    "eth_getTransactionReceipt": [
+      "hash"
+    ],
+    "eth_getUncleByBlockHashAndIndex": [
+      "hash",
+      "index"
+    ],
+    "eth_getUncleByBlockNumberAndIndex": [
+      "number_or_hash",
+      "index"
+    ],
+    "eth_getUncleCountByBlockHash": [
+      "hash"
+    ],
+    "eth_getUncleCountByBlockNumber": [
+      "number_or_hash"
+    ],
+    "eth_getWork": [],
+    "eth_hashrate": [],
+    "eth_maxPriorityFeePerGas": [],
+    "eth_mining": [],
+    "eth_newBlockFilter": [],
+    "eth_newFilter": [
+      "filter"
+    ],
+    "eth_newPendingTransactionFilter": [],
+    "eth_pendingTransactions": [],
+    "eth_protocolVersion": [],
+    "eth_sendRawTransaction": [
+      "bytes"
+    ],
+    "eth_sendTransaction": [
+      "request"
+    ],
+    "eth_submitHashrate": [
+      "hashrate",
+      "id"
+    ],
+    "eth_submitWork": [
+      "nonce",
+      "pow_hash",
+      "mix_digest"
+    ],
+    "eth_subscribe": [
+      "kind",
+      "params?"
+    ],
+    "eth_syncing": [],
+    "eth_uninstallFilter": [
+      "index"
+    ],
+    "net_listening": [],
+    "net_peerCount": [],
+    "net_version": [],
+    "neuronInfo_getNeuron": [
+      "netuid",
+      "uid",
+      "at?"
+    ],
+    "neuronInfo_getNeuronLite": [
+      "netuid",
+      "uid",
+      "at?"
+    ],
+    "neuronInfo_getNeurons": [
+      "netuid",
+      "at?"
+    ],
+    "neuronInfo_getNeuronsLite": [
+      "netuid",
+      "at?"
+    ],
+    "offchain_localStorageClear": [
+      "kind",
+      "key"
+    ],
+    "offchain_localStorageGet": [
+      "kind",
+      "key"
+    ],
+    "offchain_localStorageSet": [
+      "kind",
+      "key",
+      "value"
+    ],
+    "payment_queryFeeDetails": [
+      "encoded_xt",
+      "at?"
+    ],
+    "payment_queryInfo": [
+      "encoded_xt",
+      "at?"
+    ],
+    "stakeInfo_getColdkeyLock": [
+      "coldkey",
+      "netuid",
+      "at?"
+    ],
+    "state_call": [
+      "name",
+      "bytes",
+      "hash?"
+    ],
+    "state_callAt": [
+      "name",
+      "bytes",
+      "hash?"
+    ],
+    "state_getChildReadProof": [
+      "child_storage_key",
+      "keys",
+      "hash?"
+    ],
+    "state_getKeys": [
+      "prefix",
+      "hash?"
+    ],
+    "state_getKeysPaged": [
+      "prefix?",
+      "count",
+      "start_key?",
+      "hash?"
+    ],
+    "state_getKeysPagedAt": [
+      "prefix?",
+      "count",
+      "start_key?",
+      "hash?"
+    ],
+    "state_getMetadata": [
+      "hash?"
+    ],
+    "state_getPairs": [
+      "prefix",
+      "hash?"
+    ],
+    "state_getReadProof": [
+      "keys",
+      "hash?"
+    ],
+    "state_getRuntimeVersion": [
+      "hash?"
+    ],
+    "state_getStorage": [
+      "key",
+      "hash?"
+    ],
+    "state_getStorageAt": [
+      "key",
+      "hash?"
+    ],
+    "state_getStorageHash": [
+      "key",
+      "hash?"
+    ],
+    "state_getStorageHashAt": [
+      "key",
+      "hash?"
+    ],
+    "state_getStorageSize": [
+      "key",
+      "hash?"
+    ],
+    "state_getStorageSizeAt": [
+      "key",
+      "hash?"
+    ],
+    "state_queryStorage": [
+      "keys",
+      "block",
+      "hash?"
+    ],
+    "state_queryStorageAt": [
+      "keys",
+      "at?"
+    ],
+    "state_subscribeRuntimeVersion": [],
+    "state_subscribeStorage": [
+      "keys?"
+    ],
+    "state_traceBlock": [
+      "block",
+      "targets?",
+      "storage_keys?",
+      "methods?"
+    ],
+    "subnetInfo_getAllDynamicInfo": [
+      "at?"
+    ],
+    "subnetInfo_getAllMechagraphs": [
+      "at?"
+    ],
+    "subnetInfo_getAllMetagraphs": [
+      "at?"
+    ],
+    "subnetInfo_getBlockEmission": [
+      "at?"
+    ],
+    "subnetInfo_getColdkeyAutoStakeHotkey": [
+      "coldkey",
+      "netuid",
+      "at?"
+    ],
+    "subnetInfo_getDynamicInfo": [
+      "netuid",
+      "at?"
+    ],
+    "subnetInfo_getLockCost": [
+      "at?"
+    ],
+    "subnetInfo_getMechagraph": [
+      "netuid",
+      "mecid",
+      "at?"
+    ],
+    "subnetInfo_getMetagraph": [
+      "netuid",
+      "at?"
+    ],
+    "subnetInfo_getSelectiveMechagraph": [
+      "netuid",
+      "mecid",
+      "metagraph_index",
+      "at?"
+    ],
+    "subnetInfo_getSelectiveMetagraph": [
+      "netuid",
+      "metagraph_index",
+      "at?"
+    ],
+    "subnetInfo_getSubnetAccountId": [
+      "netuid",
+      "at?"
+    ],
+    "subnetInfo_getSubnetEmissionWeights": [
+      "netuid",
+      "at?"
+    ],
+    "subnetInfo_getSubnetHyperparams": [
+      "netuid",
+      "at?"
+    ],
+    "subnetInfo_getSubnetHyperparamsV2": [
+      "netuid",
+      "at?"
+    ],
+    "subnetInfo_getSubnetInfo": [
+      "netuid",
+      "at?"
+    ],
+    "subnetInfo_getSubnetInfo_v2": [
+      "netuid",
+      "at?"
+    ],
+    "subnetInfo_getSubnetState": [
+      "netuid",
+      "at?"
+    ],
+    "subnetInfo_getSubnetToPrune": [
+      "at?"
+    ],
+    "subnetInfo_getSubnetsInfo": [
+      "at?"
+    ],
+    "subnetInfo_getSubnetsInfo_v2": [
+      "at?"
+    ],
+    "subscribe_newHead": [],
+    "swap_currentAlphaPrice": [
+      "netuid",
+      "at?"
+    ],
+    "swap_currentAlphaPriceAll": [
+      "at?"
+    ],
+    "swap_simSwapAlphaForTao": [
+      "netuid",
+      "alpha",
+      "at?"
+    ],
+    "swap_simSwapTaoForAlpha": [
+      "netuid",
+      "tao",
+      "at?"
+    ],
+    "system_accountNextIndex": [
+      "account"
+    ],
+    "system_addLogFilter": [
+      "directives"
+    ],
+    "system_addReservedPeer": [
+      "peer"
+    ],
+    "system_chain": [],
+    "system_chainType": [],
+    "system_dryRun": [
+      "extrinsic",
+      "at?"
+    ],
+    "system_dryRunAt": [
+      "extrinsic",
+      "at?"
+    ],
+    "system_health": [],
+    "system_localListenAddresses": [],
+    "system_localPeerId": [],
+    "system_name": [],
+    "system_nodeRoles": [],
+    "system_peers": [],
+    "system_properties": [],
+    "system_removeReservedPeer": [
+      "peer_id"
+    ],
+    "system_reservedPeers": [],
+    "system_resetLogFilter": [],
+    "system_syncState": [],
+    "system_unstable_networkState": [],
+    "system_version": [],
+    "transactionWatch_v1_submitAndWatch": [
+      "bytes"
+    ],
+    "transaction_v1_broadcast": [
+      "bytes"
+    ],
+    "transaction_v1_stop": [
+      "operation_id"
+    ],
+    "txpool_content": [],
+    "txpool_inspect": [],
+    "txpool_status": [],
+    "web3_clientVersion": [],
+    "web3_sha3": [
+      "input"
+    ]
+  }
+}

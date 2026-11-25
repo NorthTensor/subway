@@ -266,12 +266,14 @@ mod tests {
                     ty: "StorageKey".to_string(),
                     optional: false,
                     inject: false,
+                    aliases: vec![],
                 },
                 MethodParam {
                     name: "at".to_string(),
                     ty: "BlockHash".to_string(),
                     optional: true,
                     inject: true,
+                    aliases: vec![],
                 },
             ],
         )
@@ -304,12 +306,14 @@ mod tests {
                     ty: "StorageKey".to_string(),
                     optional: false,
                     inject: false,
+                    aliases: vec![],
                 },
                 MethodParam {
                     name: "at".to_string(),
                     ty: "BlockHash".to_string(),
                     optional: true,
                     inject: true,
+                    aliases: vec![],
                 },
             ],
         )
@@ -341,12 +345,14 @@ mod tests {
                     ty: "StorageKey".to_string(),
                     optional: false,
                     inject: false,
+                    aliases: vec![],
                 },
                 MethodParam {
                     name: "at".to_string(),
                     ty: "BlockHash".to_string(),
                     optional: true,
                     inject: true,
+                    aliases: vec![],
                 },
             ],
         )
@@ -378,18 +384,21 @@ mod tests {
                     ty: "StorageKey".to_string(),
                     optional: false,
                     inject: false,
+                    aliases: vec![],
                 },
                 MethodParam {
                     name: "pho".to_string(),
                     ty: "u32".to_string(),
                     optional: true,
                     inject: false,
+                    aliases: vec![],
                 },
                 MethodParam {
                     name: "at".to_string(),
                     ty: "BlockHash".to_string(),
                     optional: true,
                     inject: true,
+                    aliases: vec![],
                 },
             ],
         )
@@ -421,18 +430,21 @@ mod tests {
                     ty: "StorageKey".to_string(),
                     optional: false,
                     inject: false,
+                    aliases: vec![],
                 },
                 MethodParam {
                     name: "foo".to_string(),
                     ty: "u32".to_string(),
                     optional: false,
                     inject: false,
+                    aliases: vec![],
                 },
                 MethodParam {
                     name: "at".to_string(),
                     ty: "BlockHash".to_string(),
                     optional: true,
                     inject: true,
+                    aliases: vec![],
                 },
             ],
         )
@@ -468,12 +480,14 @@ mod tests {
                     ty: "StorageKey".to_string(),
                     optional: false,
                     inject: false,
+                    aliases: vec![],
                 },
                 MethodParam {
                     name: "at".to_string(),
                     ty: "BlockNumber".to_string(),
                     optional: true,
                     inject: true,
+                    aliases: vec![],
                 },
             ],
         )
@@ -546,12 +560,14 @@ mod tests {
                     ty: "StorageKey".to_string(),
                     optional: false,
                     inject: false,
+                    aliases: vec![],
                 },
                 MethodParam {
                     name: "at".to_string(),
                     ty: "BlockNumber".to_string(),
                     optional: true,
                     inject: true,
+                    aliases: vec![],
                 },
             ],
         )
