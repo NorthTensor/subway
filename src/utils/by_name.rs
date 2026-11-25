@@ -33,7 +33,9 @@ pub fn named_to_positional(
         };
         if let Some((first, _)) = &slots[idx] {
             return Err(errors::invalid_params(format!(
-                "{method}: \"{first}\" and \"{key}\" both name param \"{}\"",
+                "{method}: \"{}\" and \"{}\" both name param \"{}\"",
+                echo_key(first),
+                echo_key(key),
                 params[idx].name
             )));
         }
@@ -62,10 +64,29 @@ pub fn named_to_positional(
 pub(crate) fn accepts(param: &MethodParam, key: &str) -> bool {
     std::iter::once(&param.name)
         .chain(param.aliases.iter())
-        .any(|name| key == name || key == snake_case(name) || key == lower_camel_case(name))
+        .any(|name| key_forms(name).iter().any(|form| key == form))
+}
+
+/// The keys a by-name call may use for a param named (or aliased) `name`:
+/// the name itself and its snake_case and lowerCamelCase forms. Config
+/// validation uses the same list, so no key can resolve to two params.
+pub(crate) fn key_forms(name: &str) -> [String; 3] {
+    [name.to_string(), snake_case(name), lower_camel_case(name)]
+}
+
+/// Longest key echoed back in an error. Keys are caller-supplied and can be
+/// as large as the request, so an error must not repeat one in full.
+const MAX_ECHOED_KEY_CHARS: usize = 64;
+
+fn echo_key(key: &str) -> String {
+    match key.char_indices().nth(MAX_ECHOED_KEY_CHARS) {
+        Some((end, _)) => format!("{}...", &key[..end]),
+        None => key.to_string(),
+    }
 }
 
 fn unknown_key_message(method: &str, params: &[MethodParam], key: &str) -> String {
+    let key = echo_key(key);
     if params.is_empty() {
         return format!("{method}: unknown param \"{key}\"; {method} takes no params");
     }
@@ -216,6 +237,31 @@ mod tests {
 
         let err = convert(&[], json!({"foo": 1})).unwrap_err();
         assert!(err.data().unwrap().get().contains("takes no params"));
+    }
+
+    #[test]
+    fn echoed_key_is_truncated_to_64_chars() {
+        let long = "k".repeat(1 << 20);
+        let shown = format!("\\\"{}...\\\"", "k".repeat(64));
+
+        let err = convert(&block_hash(), json!({ long.clone(): 1 })).unwrap_err();
+        assert_eq!(err.code(), -32602);
+        let data = err.data().unwrap().get();
+        assert!(data.len() < 400, "{} bytes", data.len());
+        assert!(data.contains(&shown), "{data}");
+
+        // a method with no params, and the two-keys-for-one-param message
+        let err = convert(&[], json!({ long.clone(): 1 })).unwrap_err();
+        assert!(err.data().unwrap().get().len() < 400);
+        let params = vec![param(&long, false, &["short"])];
+        let err = convert(&params, json!({ long: 1, "short": 2 })).unwrap_err();
+        let data = err.data().unwrap().get();
+        assert!(data.contains("both name param"), "{}", &data[..200]);
+        assert!(data.contains(&shown));
+
+        // 64 characters is not 64 bytes, and a 64-character key is not cut
+        assert_eq!(echo_key(&"é".repeat(65)), format!("{}...", "é".repeat(64)));
+        assert_eq!(echo_key(&"k".repeat(64)), "k".repeat(64));
     }
 
     #[test]

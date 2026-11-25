@@ -372,6 +372,14 @@
       "key",
       "value"
     ],
+    "payment_queryFeeDetails": [
+      "encoded_xt",
+      "at?"
+    ],
+    "payment_queryInfo": [
+      "encoded_xt",
+      "at?"
+    ],
     "stakeInfo_getColdkeyLock": [
       "coldkey",
       "netuid",

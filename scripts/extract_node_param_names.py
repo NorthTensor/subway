@@ -37,6 +37,7 @@ SOURCES = {
         "substrate/client/rpc-api/src/system/mod.rs",
         "substrate/client/rpc-api/src/offchain/mod.rs",
         "substrate/utils/frame/rpc/system/src/lib.rs",
+        "substrate/frame/transaction-payment/rpc/src/lib.rs",
         "substrate/client/rpc-spec-v2/src/chain_spec/api.rs",
         "substrate/client/rpc-spec-v2/src/archive/api.rs",
         "substrate/client/rpc-spec-v2/src/chain_head/api.rs",

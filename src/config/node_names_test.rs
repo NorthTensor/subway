@@ -100,6 +100,9 @@ fn fixture_has_the_known_names() {
     assert_eq!(node["chain_getBlockHash"], ["hash?"]);
     assert_eq!(node["state_call"], ["name", "bytes", "hash?"]);
     assert_eq!(node["eth_getTransactionCount"], ["address", "number_or_hash?"]);
+    // transaction-payment: two arguments, not (extrinsic, len, at)
+    assert_eq!(node["payment_queryInfo"], ["encoded_xt", "at?"]);
+    assert_eq!(node["payment_queryFeeDetails"], ["encoded_xt", "at?"]);
 }
 
 #[test]
