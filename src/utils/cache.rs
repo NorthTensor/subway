@@ -17,11 +17,22 @@ impl<D: Digest> Clone for CacheKey<D> {
 }
 
 impl<D: Digest> CacheKey<D> {
+    /// The key for `method` called with `params`.
+    ///
+    /// Every part is hashed with its length in front. Hashing the serialized
+    /// params one after another with nothing between them made different
+    /// calls share a key whenever their params concatenated to the same text:
+    /// `[1, 23]` and `[12, 3]` both hashed "123", so the second caller was
+    /// served the first caller's cached answer.
     pub fn new(method: &String, params: &[JsonValue]) -> Self {
         let mut hasher = D::new();
-        hasher.update(method.as_bytes());
+        let mut part = |bytes: &[u8]| {
+            hasher.update((bytes.len() as u64).to_le_bytes());
+            hasher.update(bytes);
+        };
+        part(method.as_bytes());
         for p in params {
-            hasher.update(p.to_string().as_bytes());
+            part(p.to_string().as_bytes());
         }
 
         Self(hasher.finalize())
@@ -159,6 +170,29 @@ mod tests {
     use futures::FutureExt as _;
     use jsonrpsee::types::error::reject_too_big_request;
     use serde_json::json;
+
+    fn key(method: &str, params: JsonValue) -> CacheKey<blake2::Blake2b512> {
+        CacheKey::new(&method.to_string(), params.as_array().unwrap())
+    }
+
+    #[test]
+    fn key_separates_params() {
+        // the collision this fixes: both used to hash "m" + "1" + "23" / "12" + "3"
+        assert!(key("m", json!([1, 23])) != key("m", json!([12, 3])));
+        assert!(key("m", json!([1, 2, 3])) != key("m", json!([12, 3])));
+        assert!(key("m", json!([123])) != key("m", json!([1, 23])));
+        assert!(key("m", json!([1, 23, "0xab"])) != key("m", json!([12, 3, "0xab"])));
+        assert!(key("m", json!([[1], [2]])) != key("m", json!([[1, 2]])));
+        assert!(key("m", json!([true, 1])) != key("m", json!(["true1"])));
+        // an absent trailing param is not the same call as an explicit null
+        assert!(key("m", json!([1])) != key("m", json!([1, null])));
+        // the method is separated from the params too
+        assert!(key("m1", json!([2])) != key("m", json!([12])));
+        assert!(key("ab", json!([])) != key("a", json!(["b"])));
+        // and equal calls still share a key
+        assert!(key("m", json!([1, 23])) == key("m", json!([1, 23])));
+        assert!(key("m", json!([{"a": 1}, "x"])) == key("m", json!([{"a": 1}, "x"])));
+    }
 
     #[tokio::test]
     async fn get_insert_remove() {
